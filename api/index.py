@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 TITLE_ID = "91A4D"
 SECRET_KEY = "4FSOM3T6AMUNEXOMS6U9EKS8MS8UQB7EFPPZSR768MBKBZ3KGA"
-API_KEY = "9610660052396810"
+API_KEY = "OC|9610660052396810|b111227bfa0f5d1651c6f6def0cf1c92"
 
 def get_auth_headers():
     return {"Content-Type": "application/json", "X-SecretKey": SECRET_KEY}
