@@ -5,122 +5,181 @@ from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
-titleider = "91A4D"
-secretkey = "4FSOM3T6AMUNEXOMS6U9EKS8MS8UQB7EFPPZSR768MBKBZ3KGA"
-ApiKey = "OC|9610660052396810|b111227bfa0f5d1651c6f6def0cf1c92"
-def GetAuthHeaders() -> dict:
-    return {"Content-Type": "application/json", "X-SecretKey": secretkey}
+
+TITLE_ID = "91A4D"
+SECRET_KEY = "4FSOM3T6AMUNEXOMS6U9EKS8MS8UQB7EFPPZSR768MBKBZ3KGA"
+API_KEY = "OC|9610660052396810|b111227bfa0f5d1651c6f6def0cf1c92"
+
+def get_auth_headers():
+    return {"Content-Type": "application/json", "X-SecretKey": SECRET_KEY}
+
 
 @app.route("/api/PlayFabAuthentication", methods=["POST"])
 def playfab_authentication():
+    data = request.get_json()
+    oculus_id = data.get("OculusId", "Null")
+    nonce = data.get("Nonce", "Null")
+    platform = data.get("Platform", "Null")
+
     login_req = requests.post(
-        url=f"https://{titleider}.playfabapi.com/Server/LoginWithServerCustomId",
-        json={"ServerCustomId": "OCULUS" + request.json.get('oculus_id', ''), "CreateAccount": True},
-        headers=GetAuthHeaders()
+        url=f"https://{TITLE_ID}.playfabapi.com/Server/LoginWithServerCustomId",
+        json={
+            "ServerCustomId": f"OCULUS{oculus_id}",
+            "CreateAccount": True
+        },
+        headers=get_auth_headers()
     )
 
     if login_req.status_code == 200:
-        rjson = login_req.json()
-        session_ticket = rjson.get('data').get('SessionTicket')
-        entity_token = rjson.get('data').get('EntityToken').get('EntityToken')
-        playfab_id = rjson.get('data').get('PlayFabId')
-        entity_id = rjson.get('data').get('EntityToken').get('Entity').get('Id')
-        entity_type = rjson.get('data').get('EntityToken').get('Entity').get('Type')
+        rjson = login_req.json().get('data', {})
+        session_ticket = rjson.get('SessionTicket')
+        playfab_id = rjson.get('PlayFabId')
+        entity = rjson.get('EntityToken', {})
+        entity_token = entity.get('EntityToken')
+        entity_id = entity.get('Entity', {}).get('Id')
+        entity_type = entity.get('Entity', {}).get('Type')
+
+        
+        requests.post(
+            url=f"https://{TITLE_ID}.playfabapi.com/Client/LinkCustomID",
+            json={"CustomID": f"OCULUS{oculus_id}", "ForceLink": True},
+            headers={
+                "content-type": "application/json",
+                "x-authorization": session_ticket
+            }
+        )
 
         return jsonify({
+            "PlayFabId": playfab_id,
             "SessionTicket": session_ticket,
             "EntityToken": entity_token,
-            "PlayFabId": playfab_id,
             "EntityId": entity_id,
-            "EntityType": entity_type
+            "EntityType": entity_type,
+            "Nonce": nonce,
+            "OculusId": oculus_id,
+            "Platform": platform
         }), 200
-    else: 
+    else:
         ban_info = login_req.json()
         if ban_info.get("errorCode") == 1002:
-            ban_message = ban_info.get("errorMessage", "No ban message provided.")
-            ban_details = ban_info.get("errorDetails", {})
-            ban_expiration_key = next(iter(ban_details.keys()), None)
-            ban_expiration_list = ban_details.get(ban_expiration_key, [])
-            ban_expiration = (
-                ban_expiration_list[0]
-                if len(ban_expiration_list) > 0
-                else "Indefinite"
-            )
-
+            details = ban_info.get("errorDetails", {})
+            ban_reason = next(iter(details.keys()), "Banned")
+            ban_time = details.get(ban_reason, ["Indefinite"])[0]
             return jsonify({
-                "BanMessage": ban_expiration_key,
-                "BanExpirationTime": ban_expiration,
-            }), 403     
+                "BanMessage": ban_reason,
+                "BanExpirationTime": ban_time,
+            }), 403
+        return jsonify({"Message": "Login failed"}), 403
+        
+
+@app.route("/api/CheckForBadName", methods=["POST"])
+def check_for_bad_name():
+    rjson = request.get_json().get("FunctionResult")
+    name = rjson.get("name").upper()
+
+    if name in ["KKK", "PENIS", "NIGG", "NEG", "NIGA", "MONKEYSLAVE", "SLAVE", "FAG",
+        "NAGGI", "TRANNY", "QUEER", "KYS", "DICK", "PUSSY", "VAGINA", "BIGBLACKCOCK",
+        "DILDO", "HITLER", "KKX", "XKK", "NIGA", "NIGE", "NIG", "NI6", "PORN",
+        "JEW", "JAXX", "TTTPIG", "SEX", "COCK", "CUM", "FUCK", "PENIS", "DICK",
+        "ELLIOT", "JMAN", "K9", "NIGGA", "TTTPIG", "NICKER", "NICKA",
+        "REEL", "NII", "@here", "!", " ", "JMAN", "PPPTIG", "CLEANINGBOT", "JANITOR", "K9",
+        "H4PKY", "MOSA", "NIGGER", "NIGGA", "IHATENIGGERS", "@everyone", "TTT"]:
+        return jsonify({"result": 2})
+    else:
+        return jsonify({"result": 0})
 
 @app.route("/api/CachePlayFabId", methods=["POST"])
-def cacheplayfabid():
-    idfk = request.get_json()
-    playfabid = idfk.get("SessionTicket").split("-")[0] if "SessionTicket" in idfk else None
-    if playfabid is None:
-        return jsonify({"Message": "Try Again Later."}), 404
-    return jsonify({"Message": "Authed", "PlayFabId": playfabid}), 200
-
-@app.route("/", methods=["POST", "GET"])
-def Rizz():
-    return "backend good"
-
-@app.route("/api/TitleData", methods=["POST", "GET"])
-def title_data():
-    response = requests.post(
-        url=f"https://{titleider}.playfabapi.com/Server/GetTitleData",
-        headers=settings.get_auth_headers()
-    )
-
-    if response.status_code == 200:
-        return jsonify(response.json().get("data").get("Data"))
-    else:
-        return jsonify({}), response.status_code
-
+def cache_playfab_id():
+    data = request.get_json()
+    session_ticket = data.get("SessionTicket")
+    if session_ticket:
+        playfab_id = session_ticket.split("-")[0]
+        return jsonify({"Message": "Authed", "PlayFabId": playfab_id}), 200
+    return jsonify({"Message": "Try Again Later."}), 404
 
 @app.route("/api/ConsumeOculusIAP", methods=["POST"])
 def consume_oculus_iap():
-    rjson = request.get_json()
-    access_token = rjson.get("userToken")
-    user_id = rjson.get("userID")
-    nonce = rjson.get("nonce")
-    sku = rjson.get("sku")
+    data = request.get_json()
+    access_token = data.get("userToken")
+    user_id = data.get("userID")
+    nonce = data.get("nonce")
+    sku = data.get("sku")
 
     response = requests.post(
-        url=f"https://graph.oculus.com/consume_entitlement?nonce={nonce}&user_id={user_id}&sku={sku}&access_token={ApiKey}",
+        url=f"https://graph.oculus.com/consume_entitlement?nonce={nonce}&user_id={user_id}&sku={sku}&access_token={API_KEY}",
         headers={"content-type": "application/json"}
     )
 
     if response.json().get("success"):
         return jsonify({"result": True})
-    else:
-        return jsonify({"error": True})
+    return jsonify({"error": True})
+
 
 @app.route("/api/photon", methods=["POST"])
 def photonauth():
-    print(f"Received {request.method} request at /api/photon")
-    getjson = request.get_json()
-    Ticket = getjson.get("Ticket")
-    Nonce = getjson.get("Nonce")
-    Platform = getjson.get("Platform")
-    if Ticket is None or len(Ticket.split('-')[0]) != 16:
-        return jsonify({'resultCode': 2, 'message': 'Invalid token', 'userId': None, 'nickname': None}), 403
-        
-    req = requests.post(
-        url=f"https://{titleider}.playfabapi.com/Server/GetUserAccountInfo",
-        json={"PlayFabId": Ticket.split('-')[0]},
-        headers={"content-type": "application/json", "X-SecretKey": secretkey}
-    )
+    AA = request.get_json()
+    PlayFabId = AA.get("PlayFabId")
+    OrgScopedID = AA.get("OrgScopedId")
+    CustomId = AA.get("CustomID")
+    Platform = AA.get("Platform")
+    Nonce = AA.get("Nonce")
+    UserId = AA.get("UserId")
+    MasterPlayer = AA.get("Master")
+    GorillaTagger = AA.get("GorillaTagger")
+    CosmeticsInRoom = AA.get("CosmeticsInRoom")
+    SharedGroupData = AA.get("SharedGroupData")
+    UpdatePlayerCosmetics = AA.get("UpdatePlayerCosmetics")
+    MasterClient = AA.get("MasterClient")
+    ItemIds = AA.get("ItemIds")
+    PlayerCount = AA.get("PlayerCount")
+    CosmeticAuthenticationV2 = AA.get("CosmeticAuthenticationV2")
+    RPCS = AA.get("RPCS")
+    BroadcastMyRoomV2 = AA.get("BroadcastMyRoomV2")
+    DLCOwnerShipV2 = AA.get("DLCOwnerShipV2")
+    GorillaCorpCurrencyV1 = AA.get("GorillaCorpCurrencyV1")
+    DeadMonke = AA.get("DeadMonke")
+    GhostCounter = AA.get("GhostCounter")
+    DirtyCosmeticSpawnnerV2 = AA.get("DirtyCosmeticSpawnnerV2")
+    RoomJoined = AA.get("RoomJoined")
+    VirtualStump = AA.get("VirtualStump")
+    PlayerRoomCount = AA.get("PlayerRoomCount")
+    AppVersion = AA.get("AppVersion")
+    AppId = AA.get("AppId")
+    TaggedDistance = AA.get("TaggedDistance")
+    TaggedClient = AA.get("TaggedClient")
+    OculusId = AA.get("OCULUSId")
+    TitleId = AA.get("TITLE_ID")
 
-    if req.status_code == 200:
-        nickName = req.json().get("UserInfo", {}).get("UserAccountInfo", {}).get("Username")
-        return jsonify({
-            'resultCode': 1,
-            'message': 'Authenticated',
-            'userId': Ticket.split('-')[0],
-            'nickname': nickName
-        })
-    else:
-        return jsonify({"resultCode": 0, "message": "Something went wrong"}), 500
+    return jsonify({
+        "ResultCode": 1,
+        "StatusCode": 200,
+        "Message": "authed with photon",
+        "Result": 0,
+        "UserId": UserId,
+        "AppId": AppId,
+        "AppVersion": AppVersion,
+        "Ticket": AA.get("Ticket"),
+        "Token": AA.get("Token"),
+        "Nonce": Nonce,
+        "Platform": Platform,
+        "Username": AA.get("Username"),
+        "PlayerRoomCount": PlayerRoomCount,
+        "GorillaTagger": GorillaTagger,
+        "CosmeticAuthentication": CosmeticAuthenticationV2,
+        "CosmeticsInRoom": CosmeticsInRoom,
+        "UpdatePlayerCosmetics": UpdatePlayerCosmetics,
+        "DLCOwnerShip": DLCOwnerShipV2,
+        "Currency": GorillaCorpCurrencyV1,
+        "RoomJoined": RoomJoined,     
+        "VirtualStump": VirtualStump,
+        "DeadMonke": DeadMonke,
+        "GhostCounter": GhostCounter,
+        "BroadcastRoom": BroadcastMyRoomV2,
+        "TaggedClient": TaggedClient,
+        "TaggedDistance": TaggedDistance,
+        "RPCS": RPCS
+    }), 200
+
 
 if __name__ == "__main__":
     app.run(debug=True)
